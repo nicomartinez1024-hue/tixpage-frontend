@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TIXPAGE — Event page builder</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #14161F; min-height: 100%; }
+  #root { min-height: 100vh; }
+
+  .tp-root {
+    --ink:#14161F; --cream:#FFF6E9; --marigold:#FFB627; --coral:#FF5A44;
+    --teal:#0E7C7B; --charcoal:#2A2A2E; --line: rgba(20,22,31,0.12);
+    --line-light: rgba(255,246,233,0.18);
+    font-family: 'Inter', system-ui, sans-serif;
+    color: var(--charcoal);
+    min-height: 100vh;
+    background: var(--ink);
+  }
+  .tp-root * { box-sizing: border-box; }
+  .tp-display { font-family: 'Fraunces', serif; }
+  .tp-mono { font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.02em; }
+
+  .tp-btn {
+    display:inline-flex; align-items:center; gap:8px; justify-content:center;
+    padding: 12px 20px; border-radius: 999px; border: none; cursor: pointer;
+    font-family:'Inter',sans-serif; font-weight:600; font-size:14px;
+    transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+  }
+  .tp-btn:active { transform: scale(0.97); }
+  .tp-btn:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+  .tp-btn-primary { background: var(--marigold); color: var(--ink); }
+  .tp-btn-primary:hover { box-shadow: 0 6px 20px rgba(255,182,39,0.35); }
+  .tp-btn-dark { background: var(--ink); color: var(--cream); }
+  .tp-btn-dark:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.35); }
+  .tp-btn-ghost { background: transparent; color: var(--cream); border: 1px solid var(--line-light); }
+  .tp-btn-ghost:hover { background: rgba(255,255,255,0.06); }
+  .tp-btn-ghost-dark { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  .tp-btn-ghost-dark:hover { background: rgba(20,22,31,0.05); }
+  .tp-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .tp-input, .tp-textarea, .tp-select {
+    width: 100%; padding: 11px 14px; border-radius: 10px;
+    border: 1px solid var(--line); font-family: 'Inter', sans-serif; font-size: 14px;
+    background: #fff; color: var(--charcoal);
+  }
+  .tp-input:focus, .tp-textarea:focus, .tp-select:focus {
+    outline: 2px solid var(--teal); outline-offset: 1px; border-color: var(--teal);
+  }
+  .tp-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: rgba(42,42,46,0.6); display:block; margin-bottom: 6px; }
+
+  .tp-card {
+    background: #1C1E29; border: 1px solid rgba(255,255,255,0.08); border-radius: 18px;
+    overflow: hidden; display:flex; flex-direction:column;
+  }
+  .tp-card-cover { height: 140px; position: relative; }
+  .tp-card-badge {
+    position:absolute; top:12px; left:12px; font-size: 11px; font-weight:700;
+    padding: 4px 10px; border-radius: 999px; text-transform:uppercase; letter-spacing:.04em;
+  }
+
+  .tp-tear {
+    position: relative; border-top: 2px dashed rgba(20,22,31,0.25); margin-top: 4px;
+  }
+  .tp-tear::before, .tp-tear::after {
+    content: ""; position: absolute; top: -13px; width: 26px; height: 26px;
+    background: var(--ink); border-radius: 50%;
+  }
+  .tp-tear::before { left: -13px; }
+  .tp-tear::after { right: -13px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tp-btn { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+/* ---------------------------------------------------------------
+   TIXPAGE — Phase 1 prototype (standalone build)
+   Event landing page generator with payment built in.
+   Data persists via localStorage in this browser.
+----------------------------------------------------------------- */
+
+/* ---- minimal inline icon set (no external icon package needed) ---- */
+function Icon({ children, size = 16, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {children}
+    </svg>
+  );
+}
+const Plus = (p) => <Icon {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></Icon>;
+const Calendar = (p) => <Icon {...p}><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></Icon>;
+const MapPin = (p) => <Icon {...p}><path d="M12 21s-7-6.5-7-11a7 7 0 0 1 14 0c0 4.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></Icon>;
+const Ticket = (p) => <Icon {...p}><path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1.5a1.5 1.5 0 0 0 0 3V15a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1.5a1.5 1.5 0 0 0 0-3V9z"/><line x1="12" y1="7" x2="12" y2="17" strokeDasharray="2 2"/></Icon>;
+const Copy = (p) => <Icon {...p}><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></Icon>;
+const Users = (p) => <Icon {...p}><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c0-3.6 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5"/><circle cx="17" cy="8.5" r="2.5"/><path d="M15.5 13.5c2.7.5 4.5 2.8 4.5 6"/></Icon>;
+const ArrowLeft = (p) => <Icon {...p}><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></Icon>;
+const Check = (p) => <Icon {...p}><polyline points="20 6 9 17 4 12"/></Icon>;
+const Download = (p) => <Icon {...p}><path d="M12 3v12"/><polyline points="7 11 12 16 17 11"/><line x1="4" y1="20" x2="20" y2="20"/></Icon>;
+const Smartphone = (p) => <Icon {...p}><rect x="6" y="2" width="12" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></Icon>;
+const Building2 = (p) => <Icon {...p}><rect x="4" y="3" width="16" height="18" rx="1"/><line x1="8" y1="7" x2="8" y2="7.01"/><line x1="12" y1="7" x2="12" y2="7.01"/><line x1="16" y1="7" x2="16" y2="7.01"/><line x1="8" y1="11" x2="8" y2="11.01"/><line x1="12" y1="11" x2="12" y2="11.01"/><line x1="16" y1="11" x2="16" y2="11.01"/><line x1="9" y1="21" x2="9" y2="17"/><line x1="15" y1="21" x2="15" y2="17"/></Icon>;
+const CreditCard = (p) => <Icon {...p}><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></Icon>;
+const Pencil = (p) => <Icon {...p}><path d="M17 3a2.8 2.8 0 0 1 4 4L7 21l-4 1 1-4z"/></Icon>;
+const ExternalLink = (p) => <Icon {...p}><path d="M14 3h7v7"/><line x1="21" y1="3" x2="10" y2="14"/><path d="M19 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h6"/></Icon>;
+
+/* ---- API config ----
+   Set this to your deployed Render URL (no trailing slash).
+   Example: "https://tixpage-backend.onrender.com"
+   Leave it as-is while testing locally against `uvicorn app.main:app --reload`. */
+const API_BASE = "http//192.168.1.45:8000";
+
+/* ---- Auth token storage ----
+   Kept in localStorage so a refresh doesn't log the organizer out.
+   (This is a real deployed page, not a Claude artifact, so localStorage is fine here.) */
+const authStore = {
+  get: () => localStorage.getItem("tixpage_token"),
+  set: (token) => localStorage.setItem("tixpage_token", token),
+  clear: () => localStorage.removeItem("tixpage_token"),
+};
+
+/* ---- API-backed persistence (replaces localStorage) ---- */
+async function apiFetch(path, options = {}) {
+  const token = authStore.get();
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    ...options,
+  });
+  if (res.status === 401) {
+    authStore.clear();
+  }
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { detail = (await res.json()).detail || detail; } catch {}
+    throw new Error(detail);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+const api = {
+  register: (payload) => apiFetch("/auth/register", { method: "POST", body: JSON.stringify(payload) }),
+  login: (payload) => apiFetch("/auth/login", { method: "POST", body: JSON.stringify(payload) }),
+  me: () => apiFetch("/auth/me"),
+  listEvents: () => apiFetch("/events"),
+  createEvent: (payload) => apiFetch("/events", { method: "POST", body: JSON.stringify(payload) }),
+  updateEvent: (id, payload) => apiFetch(`/events/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  toggleLive: (id) => apiFetch(`/events/${id}/toggle-live`, { method: "PATCH" }),
+  getEventBySlug: (slug) => apiFetch(`/events/by-slug/${slug}`),
+  listBuyers: (id) => apiFetch(`/events/${id}/buyers`),
+  checkout: (id, payload) => apiFetch(`/events/${id}/checkout`, { method: "POST", body: JSON.stringify(payload) }),
+  checkGcashStatus: (eventId, buyerId) => apiFetch(`/events/${eventId}/buyers/${buyerId}/gcash-status`),
+  buyersCsvUrl: (id) => `${API_BASE}/events/${id}/buyers/export.csv?token=${encodeURIComponent(authStore.get() || "")}`,
+};
+
+const PAYMENT_METHODS = [
+  { id: "gcash", label: "GCash", icon: Smartphone },
+  { id: "bank", label: "Bank transfer", icon: Building2 },
+  { id: "card", label: "Card", icon: CreditCard },
+];
+
+const GRADIENTS = [
+  "linear-gradient(135deg,#FF5A44 0%,#FFB627 100%)",
+  "linear-gradient(135deg,#0E7C7B 0%,#FFB627 100%)",
+  "linear-gradient(135deg,#14161F 0%,#FF5A44 100%)",
+  "linear-gradient(135deg,#0E7C7B 0%,#14161F 100%)",
+];
+
+function slugify(str) {
+  return (str || "event")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+    .slice(0, 40) || "event";
+}
+function formatPHP(n) { return `₱${Number(n || 0).toLocaleString()}`; }
+function formatDate(iso) {
+  if (!iso) return "Date TBA";
+  const d = new Date(iso + "T00:00:00");
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString("en-PH", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+}
+function genCode() { return Math.random().toString(36).slice(2, 8).toUpperCase(); }
+function gradientFor(id) {
+  let h = 0;
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) % GRADIENTS.length;
+  return GRADIENTS[h];
+}
+
+/* Parses "#/e/some-slug" out of the URL hash, if present.
+   This is what makes a copied ticket link work for someone who was
+   never in the admin dashboard - it loads the public page directly. */
+function getSharedSlugFromHash() {
+  const m = window.location.hash.match(/^#\/e\/(.+)$/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+function LoginPage({ onAuthed }) {
+  const [mode, setMode] = useState("login"); // "login" | "register"
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [businessName, setBusinessName] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      const result = mode === "login"
+        ? await api.login({ email, password })
+        : await api.register({ email, password, business_name: businessName || null });
+      authStore.set(result.access_token);
+      onAuthed(result.organizer);
+    } catch (err) {
+      setError(err.message || "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="tp-root" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <form onSubmit={submit} style={{ width: "100%", maxWidth: 380, background: "var(--ink)", borderRadius: 20, padding: 32, border: "1px solid rgba(255,255,255,0.08)" }}>
+        <h1 style={{ color: "var(--cream)", fontFamily: "Inter, sans-serif", fontSize: 22, fontWeight: 700, marginBottom: 4 }}>
+          {mode === "login" ? "Log in" : "Create your organizer account"}
+        </h1>
+        <p style={{ color: "rgba(255,246,233,0.55)", fontSize: 13, marginBottom: 24 }}>
+          {mode === "login" ? "Manage your events and see who's bought tickets." : "Every event you create stays private to your account."}
+        </p>
+
+        {mode === "register" && (
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ color: "rgba(255,246,233,0.7)", fontSize: 12.5, display: "block", marginBottom: 6 }}>Business name (optional)</label>
+            <input value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="tp-input" placeholder="e.g. Sunset Events Co." />
+          </div>
+        )}
+
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ color: "rgba(255,246,233,0.7)", fontSize: 12.5, display: "block", marginBottom: 6 }}>Email</label>
+          <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="tp-input" placeholder="you@example.com" />
+        </div>
+
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ color: "rgba(255,246,233,0.7)", fontSize: 12.5, display: "block", marginBottom: 6 }}>Password</label>
+          <input type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} className="tp-input" placeholder="At least 8 characters" />
+        </div>
+
+        {error && <p style={{ fontSize: 13, color: "var(--coral)", marginBottom: 14 }}>{error}</p>}
+
+        <button type="submit" disabled={busy} className="tp-btn tp-btn-primary" style={{ width: "100%", padding: "13px", marginBottom: 14 }}>
+          {busy ? "Please wait…" : mode === "login" ? "Log in" : "Create account"}
+        </button>
+
+        <p style={{ textAlign: "center", fontSize: 13, color: "rgba(255,246,233,0.55)" }}>
+          {mode === "login" ? "New here? " : "Already have an account? "}
+          <a href="#" onClick={(e) => { e.preventDefault(); setMode(mode === "login" ? "register" : "login"); setError(""); }} style={{ color: "var(--marigold)", fontWeight: 600 }}>
+            {mode === "login" ? "Create one" : "Log in instead"}
+          </a>
+        </p>
+      </form>
+    </div>
+  );
+}
+
+function App() {
+  const sharedSlug = getSharedSlugFromHash();
+
+  const [events, setEvents] = useState([]);
+  const [buyersByEvent, setBuyersByEvent] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [view, setView] = useState(sharedSlug ? "shared" : "dashboard");
+  const [activeEventId, setActiveEventId] = useState(null);
+  const [editingEvent, setEditingEvent] = useState(null);
+  const [toast, setToast] = useState("");
+  const [organizer, setOrganizer] = useState(null);
+  const [checkingAuth, setCheckingAuth] = useState(!sharedSlug);
+
+  // On load, if a token is already saved, verify it's still valid before showing the dashboard.
+  useEffect(() => {
+    if (sharedSlug) return;
+    const token = authStore.get();
+    if (!token) { setCheckingAuth(false); return; }
+    api.me().then(setOrganizer).catch(() => authStore.clear()).finally(() => setCheckingAuth(false));
+  }, []);
+
+  function logout() {
+    authStore.clear();
+    setOrganizer(null);
+    setEvents([]);
+    setBuyersByEvent({});
+  }
+
+  // Shared-link mode: fetch just that one event by slug, skip the dashboard entirely.
+  const [sharedEvent, setSharedEvent] = useState(null);
+  const [sharedError, setSharedError] = useState("");
+
+  useEffect(() => {
+    if (!sharedSlug) return;
+    api.getEventBySlug(sharedSlug)
+      .then(setSharedEvent)
+      .catch((e) => setSharedError(e.message || "This event page is not available."));
+  }, [sharedSlug]);
+
+  async function refreshAll() {
+    setLoading(true);
+    setLoadError("");
+    try {
+      const evts = await api.listEvents();
+      setEvents(evts);
+      const pairs = await Promise.all(
+        evts.map(async (e) => [e.id, await api.listBuyers(e.id).catch(() => [])])
+      );
+      setBuyersByEvent(Object.fromEntries(pairs));
+    } catch (e) {
+      setLoadError(e.message || "Could not reach the backend.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (sharedSlug || !organizer) return;
+    refreshAll();
+  }, [organizer]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(""), 2200);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  async function saveEvent(evt) {
+    try {
+      if (evt.id) {
+        await api.updateEvent(evt.id, evt);
+        setToast("Event updated");
+      } else {
+        await api.createEvent(evt);
+        setToast("Event page created");
+      }
+      setView("dashboard");
+      await refreshAll();
+    } catch (e) {
+      setToast("Save failed: " + e.message);
+    }
+  }
+
+  async function toggleLive(id) {
+    try {
+      const updated = await api.toggleLive(id);
+      setEvents((prev) => prev.map((e) => (e.id === id ? updated : e)));
+    } catch (e) {
+      setToast("Could not update: " + e.message);
+    }
+  }
+
+  async function addBuyer(eventId, buyerForm) {
+    const result = await api.checkout(eventId, buyerForm); // throws on failure, caller handles it
+    const list = buyersByEvent[eventId] || [];
+    setBuyersByEvent({ ...buyersByEvent, [eventId]: [...list, { ...buyerForm, ...result }] });
+    return result;
+  }
+
+  function copyLink(evt) {
+    const url = `${window.location.origin}${window.location.pathname}#/e/${evt.slug}`;
+    navigator.clipboard?.writeText(url).catch(() => {});
+    setToast("Link copied · " + url);
+  }
+
+  // ---- Shared link view: a buyer opened a tixpage.link/#/e/slug URL directly ----
+  if (sharedSlug) {
+    if (sharedError) {
+      return (
+        <div className="tp-root" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24 }}>
+          <p style={{ color: "var(--cream)", fontFamily: "Inter, sans-serif", textAlign: "center" }}>{sharedError}</p>
+        </div>
+      );
+    }
+    if (!sharedEvent) {
+      return (
+        <div className="tp-root" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 400 }}>
+          <span style={{ color: "var(--cream)", fontFamily: "Inter, sans-serif" }}>Loading…</span>
+        </div>
+      );
+    }
+    return <PublicPage event={sharedEvent} onBuy={(buyer) => addBuyer(sharedEvent.id, buyer)} onCheckGcashStatus={(buyerId) => api.checkGcashStatus(sharedEvent.id, buyerId)} />;
+  }
+
+  if (checkingAuth) {
+    return (
+      <div className="tp-root" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 400 }}>
+        <span style={{ color: "var(--cream)", fontFamily: "Inter, sans-serif" }}>Loading…</span>
+      </div>
+    );
+  }
+
+  if (!organizer) {
+    return <LoginPage onAuthed={setOrganizer} />;
+  }
+
+  if (loading) {
+    return (
+      <div className="tp-root" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 400 }}>
+        <span style={{ color: "var(--cream)", fontFamily: "Inter, sans-serif" }}>Loading…</span>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="tp-root" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 400, gap: 12, padding: 24 }}>
+        <span style={{ color: "var(--cream)", fontFamily: "Inter, sans-serif", textAlign: "center" }}>
+          Couldn't reach the backend: {loadError}<br />
+          <span style={{ fontSize: 12, color: "rgba(255,246,233,0.55)" }}>Check that API_BASE at the top of this file matches your Render URL, and that the service is awake.</span>
+        </span>
+        <button className="tp-btn tp-btn-primary" onClick={refreshAll}>Retry</button>
+      </div>
+    );
+  }
+
+  const activeEvent = events.find((e) => e.id === activeEventId);
+
+  return (
+    <div className="tp-root" style={{ minHeight: "100vh" }}>
+      {toast && (
+        <div style={{
+          position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 50,
+          background: "var(--ink)", color: "var(--cream)", padding: "10px 18px", borderRadius: 999,
+          fontSize: 13, fontWeight: 600, boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
+          display: "flex", alignItems: "center", gap: 8, border: "1px solid rgba(255,255,255,0.1)",
+        }}>
+          <Check size={14} color="var(--marigold)" /> {toast}
+        </div>
+      )}
+
+      {view === "dashboard" && (
+        <Dashboard
+          events={events}
+          buyersByEvent={buyersByEvent}
+          onCreate={() => { setEditingEvent(null); setView("create"); }}
+          onEdit={(evt) => { setEditingEvent(evt); setView("create"); }}
+          onView={(id) => { setActiveEventId(id); setView("public"); }}
+          onBuyers={(id) => { setActiveEventId(id); setView("buyers"); }}
+          onToggleLive={toggleLive}
+          onCopyLink={copyLink}
+          organizer={organizer}
+          onLogout={logout}
+        />
+      )}
+
+      {view === "create" && (
+        <EventForm initial={editingEvent} onCancel={() => setView("dashboard")} onSave={saveEvent} />
+      )}
+
+      {view === "public" && activeEvent && (
+        <PublicPage event={activeEvent} onBack={() => setView("dashboard")} onBuy={(buyer) => addBuyer(activeEvent.id, buyer)} onCheckGcashStatus={(buyerId) => api.checkGcashStatus(activeEvent.id, buyerId)} adminPreview />
+      )}
+
+      {view === "buyers" && activeEvent && (
+        <BuyersView event={activeEvent} buyers={buyersByEvent[activeEvent.id] || []} onBack={() => setView("dashboard")} />
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Dashboard ---------------- */
+
+function Dashboard({ events, buyersByEvent, onCreate, onEdit, onView, onBuyers, onToggleLive, onCopyLink, organizer, onLogout }) {
+  const totalBuyers = Object.values(buyersByEvent).reduce((s, l) => s + l.length, 0);
+  const totalRevenue = events.reduce((sum, e) => {
+    const paid = (buyersByEvent[e.id] || []).length;
+    return sum + paid * Number(e.price || 0);
+  }, 0);
+
+  return (
+    <div style={{ maxWidth: 1080, margin: "0 auto", padding: "40px 24px 80px" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+        <span style={{ color: "rgba(255,246,233,0.5)", fontSize: 12.5, marginRight: 12 }}>{organizer?.business_name || organizer?.email}</span>
+        <a href="#" onClick={(e) => { e.preventDefault(); onLogout(); }} style={{ color: "var(--marigold)", fontSize: 12.5, fontWeight: 600 }}>Log out</a>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 16, marginBottom: 32 }}>
+        <div>
+          <div style={{ color: "var(--marigold)", fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>
+            Phase 1 · Prototype
+          </div>
+          <h1 className="tp-display" style={{ color: "var(--cream)", fontSize: 34, fontWeight: 700, margin: 0 }}>TIXPAGE</h1>
+          <p style={{ color: "rgba(255,246,233,0.6)", margin: "6px 0 0", fontSize: 14 }}>One link from video to paid ticket.</p>
+        </div>
+        <button className="tp-btn tp-btn-primary" onClick={onCreate}><Plus size={16} /> New event page</button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px,1fr))", gap: 12, marginBottom: 32 }}>
+        <StatCard label="Live pages" value={events.filter((e) => e.live).length} />
+        <StatCard label="Total buyers" value={totalBuyers} />
+        <StatCard label="Revenue captured" value={formatPHP(totalRevenue)} />
+      </div>
+
+      {events.length === 0 ? (
+        <div style={{ border: "1px dashed rgba(255,246,233,0.25)", borderRadius: 18, padding: "56px 24px", textAlign: "center", color: "rgba(255,246,233,0.65)" }}>
+          <Ticket size={28} color="var(--marigold)" style={{ marginBottom: 12 }} />
+          <p className="tp-display" style={{ color: "var(--cream)", fontSize: 20, margin: "0 0 6px" }}>No event pages yet</p>
+          <p style={{ fontSize: 14, margin: "0 0 20px" }}>Create your first one — takes under 5 minutes.</p>
+          <button className="tp-btn tp-btn-primary" onClick={onCreate}><Plus size={16} /> New event page</button>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px,1fr))", gap: 18 }}>
+          {events.map((evt) => {
+            const buyers = buyersByEvent[evt.id] || [];
+            const revenue = buyers.length * Number(evt.price || 0);
+            return (
+              <div key={evt.id} className="tp-card">
+                <div className="tp-card-cover" style={{ background: evt.cover ? `url(${evt.cover}) center/cover` : gradientFor(evt.id) }}>
+                  <span className="tp-card-badge" style={{ background: evt.live ? "var(--marigold)" : "rgba(255,255,255,0.85)", color: "var(--ink)" }}>
+                    {evt.live ? "Live" : "Draft"}
+                  </span>
+                </div>
+                <div style={{ padding: "16px 18px 18px", flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div>
+                    <h3 className="tp-display" style={{ color: "var(--cream)", fontSize: 19, margin: "0 0 6px", lineHeight: 1.2 }}>{evt.title}</h3>
+                    <div style={{ color: "rgba(255,246,233,0.55)", fontSize: 12.5, display: "flex", flexDirection: "column", gap: 3 }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Calendar size={12} /> {formatDate(evt.date)}</span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 6 }}><MapPin size={12} /> {evt.venue || "Venue TBA"}</span>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "10px 0", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                    <span className="tp-mono" style={{ color: "var(--marigold)", fontSize: 15 }}>{formatPHP(evt.price)}</span>
+                    <span style={{ color: "rgba(255,246,233,0.55)", fontSize: 12 }}>{buyers.length} buyer{buyers.length !== 1 ? "s" : ""} · {formatPHP(revenue)}</span>
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    <button className="tp-btn tp-btn-ghost" style={{ flex: "1 1 auto", padding: "9px 12px", fontSize: 13 }} onClick={() => onView(evt.id)}>
+                      <ExternalLink size={13} /> View page
+                    </button>
+                    <button className="tp-btn tp-btn-ghost" style={{ flex: "1 1 auto", padding: "9px 12px", fontSize: 13 }} onClick={() => onBuyers(evt.id)}>
+                      <Users size={13} /> Buyers
+                    </button>
+                    <button className="tp-btn tp-btn-ghost" style={{ padding: "9px 10px" }} onClick={() => onEdit(evt)} aria-label="Edit event"><Pencil size={13} /></button>
+                    <button className="tp-btn tp-btn-ghost" style={{ padding: "9px 10px" }} onClick={() => onCopyLink(evt)} aria-label="Copy link"><Copy size={13} /></button>
+                  </div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "rgba(255,246,233,0.6)", cursor: "pointer", marginTop: 2 }}>
+                    <input type="checkbox" checked={!!evt.live} onChange={() => onToggleLive(evt.id)} style={{ accentColor: "var(--marigold)" }} />
+                    Page is live
+                  </label>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatCard({ label, value }) {
+  return (
+    <div style={{ background: "#1C1E29", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: "14px 16px" }}>
+      <div className="tp-mono" style={{ color: "var(--marigold)", fontSize: 22, fontWeight: 600 }}>{value}</div>
+      <div style={{ color: "rgba(255,246,233,0.55)", fontSize: 12, marginTop: 2 }}>{label}</div>
+    </div>
+  );
+}
+
+/* ---------------- Event form ---------------- */
+
+function EventForm({ initial, onCancel, onSave }) {
+  const [title, setTitle] = useState(initial?.title || "");
+  const [date, setDate] = useState(initial?.date || "");
+  const [venue, setVenue] = useState(initial?.venue || "");
+  const [price, setPrice] = useState(initial?.price || "");
+  const [cover, setCover] = useState(initial?.cover || "");
+  const [details, setDetails] = useState(initial?.details || "");
+  const [methods, setMethods] = useState(initial?.methods || ["gcash"]);
+  const [slug, setSlug] = useState(initial?.slug || "");
+
+  function toggleMethod(id) {
+    setMethods((m) => (m.includes(id) ? m.filter((x) => x !== id) : [...m, id]));
+  }
+
+  function submit(e) {
+    e.preventDefault();
+    if (!title.trim()) return;
+    onSave({
+      id: initial?.id, // undefined for new events -> App does a POST; set -> PUT
+      title: title.trim(), date, venue, price: Number(price) || 0, cover, details,
+      methods: methods.length ? methods : ["gcash"],
+      slug: (slug || slugify(title)).trim(),
+      live: initial?.live ?? true,
+    });
+  }
+
+  return (
+    <div style={{ maxWidth: 640, margin: "0 auto", padding: "40px 24px 80px" }}>
+      <button className="tp-btn tp-btn-ghost" style={{ marginBottom: 24, padding: "8px 14px" }} onClick={onCancel}><ArrowLeft size={14} /> Back</button>
+      <h1 className="tp-display" style={{ color: "var(--cream)", fontSize: 26, marginBottom: 4 }}>{initial ? "Edit event page" : "New event page"}</h1>
+      <p style={{ color: "rgba(255,246,233,0.55)", fontSize: 14, marginBottom: 28 }}>Fill this in once — it becomes the page you share.</p>
+
+      <form onSubmit={submit} style={{ background: "#fff", borderRadius: 18, padding: 24, display: "flex", flexDirection: "column", gap: 18 }}>
+        <div>
+          <label className="tp-label" htmlFor="tp-title">Event title</label>
+          <input id="tp-title" className="tp-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Sunset Rooftop Mixer" required />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <div>
+            <label className="tp-label" htmlFor="tp-date">Date</label>
+            <input id="tp-date" type="date" className="tp-input" value={date} onChange={(e) => setDate(e.target.value)} />
+          </div>
+          <div>
+            <label className="tp-label" htmlFor="tp-price">Ticket price (₱)</label>
+            <input id="tp-price" type="number" min="0" className="tp-input" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="600" />
+          </div>
+        </div>
+        <div>
+          <label className="tp-label" htmlFor="tp-venue">Venue</label>
+          <input id="tp-venue" className="tp-input" value={venue} onChange={(e) => setVenue(e.target.value)} placeholder="The Grand Hotel, Manila" />
+        </div>
+        <div>
+          <label className="tp-label" htmlFor="tp-cover">Cover image URL <span style={{ textTransform: "none", fontWeight: 400 }}>(optional)</span></label>
+          <input id="tp-cover" className="tp-input" value={cover} onChange={(e) => setCover(e.target.value)} placeholder="https://…" />
+        </div>
+        <div>
+          <label className="tp-label" htmlFor="tp-details">Details</label>
+          <textarea id="tp-details" className="tp-textarea" rows={4} value={details} onChange={(e) => setDetails(e.target.value)} placeholder="What buyers should know — dress code, inclusions, schedule." />
+        </div>
+        <div>
+          <label className="tp-label">Payment methods on this page</label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {PAYMENT_METHODS.map((m) => {
+              const Icon2 = m.icon;
+              const active = methods.includes(m.id);
+              return (
+                <button type="button" key={m.id} onClick={() => toggleMethod(m.id)} className="tp-btn"
+                  style={{ padding: "9px 14px", fontSize: 13, background: active ? "var(--ink)" : "#fff", color: active ? "var(--cream)" : "var(--charcoal)", border: `1px solid ${active ? "var(--ink)" : "var(--line)"}` }}>
+                  <Icon2 size={14} /> {m.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div>
+          <label className="tp-label" htmlFor="tp-slug">Short link</label>
+          <div style={{ display: "flex", alignItems: "center", gap: 0, border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
+            <span style={{ padding: "11px 0 11px 14px", fontSize: 14, color: "rgba(42,42,46,0.5)" }} className="tp-mono">tixpage.link/</span>
+            <input id="tp-slug" style={{ border: "none", outline: "none", padding: "11px 14px 11px 4px", fontSize: 14, flex: 1 }} className="tp-mono"
+              value={slug} onChange={(e) => setSlug(slugify(e.target.value))} placeholder={slugify(title) || "event-slug"} />
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+          <button type="submit" className="tp-btn tp-btn-dark" style={{ flex: 1 }}>{initial ? "Save changes" : "Create page"}</button>
+          <button type="button" className="tp-btn tp-btn-ghost-dark" onClick={onCancel}>Cancel</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/* ---------------- Public event page (ticket stub) ---------------- */
+
+function getBuyerIdFromHash() {
+  // PayMongo redirects back to "...#/e/slug?buyer=abc123" after GCash authorization.
+  const m = window.location.hash.match(/[?&]buyer=([^&]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+function PublicPage({ event, onBack, onBuy, onCheckGcashStatus, adminPreview }) {
+  const returningBuyerId = getBuyerIdFromHash();
+  const [stage, setStage] = useState(returningBuyerId ? "confirming" : "info");
+  const [method, setMethod] = useState(event.methods?.[0] || "gcash");
+  const [form, setForm] = useState({ name: "", phone: "", email: "" });
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+
+  // Coming back from GCash authorization - poll until PayMongo confirms it.
+  useEffect(() => {
+    if (!returningBuyerId) return;
+    let cancelled = false;
+    let attempts = 0;
+
+    async function poll() {
+      if (cancelled) return;
+      attempts += 1;
+      try {
+        const result = await onCheckGcashStatus(returningBuyerId);
+        if (result.status === "paid") {
+          setCode(result.code);
+          setStage("done");
+          return;
+        }
+        if (result.status === "failed") {
+          setError("The GCash payment wasn't completed. You can try again below.");
+          setStage("pay");
+          return;
+        }
+        if (attempts > 40) { // ~2 minutes at 3s intervals
+          setError("Still waiting on GCash confirmation. If you already paid, refresh this page in a moment.");
+          setStage("pay");
+          return;
+        }
+        setTimeout(poll, 3000);
+      } catch (err) {
+        setError(err.message || "Could not confirm payment status.");
+        setStage("pay");
+      }
+    }
+    poll();
+    return () => { cancelled = true; };
+  }, [returningBuyerId]);
+
+  async function startCheckout(e) {
+    e.preventDefault();
+    setError("");
+    setStage("processing");
+    try {
+      const result = await onBuy({ ...form, method });
+      if (result.status === "pending" && result.checkout_url) {
+        // Real GCash flow - send the buyer to PayMongo to authorize, they'll
+        // land back on this same page (with ?buyer=...) when done.
+        window.location.href = result.checkout_url;
+        return;
+      }
+      // Simulated methods (bank/card) still resolve immediately.
+      setCode(result.code);
+      setStage("done");
+    } catch (err) {
+      setError(err.message || "Payment could not be processed. Please try again.");
+      setStage("pay");
+    }
+  }
+
+  if (stage === "confirming") {
+    return (
+      <div style={{ minHeight: "100vh", background: "var(--cream)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <div style={{ textAlign: "center" }}>
+          <p style={{ fontFamily: "Inter, sans-serif", fontWeight: 600, marginBottom: 6 }}>Confirming your GCash payment…</p>
+          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "rgba(42,42,46,0.6)" }}>This usually takes just a few seconds.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", background: "var(--cream)" }}>
+      {adminPreview && (
+        <div style={{ background: "var(--ink)", padding: "10px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <button className="tp-btn tp-btn-ghost" style={{ padding: "6px 12px", fontSize: 12.5 }} onClick={onBack}>
+            <ArrowLeft size={13} /> Admin preview — this is what buyers see
+          </button>
+          <span style={{ color: "rgba(255,246,233,0.45)", fontSize: 12 }} className="tp-mono">#/e/{event.slug}</span>
+        </div>
+      )}
+
+      <div style={{ maxWidth: 480, margin: "0 auto", padding: "0 0 60px" }}>
+        <div style={{ height: 240, background: event.cover ? `url(${event.cover}) center/cover` : gradientFor(event.id), display: "flex", alignItems: "flex-end", padding: 22, position: "relative" }}>
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.55), transparent 60%)" }} />
+          <h1 className="tp-display" style={{ position: "relative", color: "#fff", fontSize: 30, margin: 0, lineHeight: 1.1 }}>{event.title}</h1>
+        </div>
+
+        <div style={{ background: "#fff", padding: "22px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 14.5, color: "var(--charcoal)" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 8 }}><Calendar size={15} color="var(--teal)" /> {formatDate(event.date)}</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 8 }}><MapPin size={15} color="var(--teal)" /> {event.venue || "Venue to be announced"}</span>
+          </div>
+          {event.details && <p style={{ fontSize: 14, lineHeight: 1.6, color: "rgba(42,42,46,0.8)", margin: 0 }}>{event.details}</p>}
+        </div>
+
+        <div className="tp-tear" style={{ background: "var(--cream)" }} />
+
+        <div style={{ background: "var(--cream)", padding: "26px 24px 32px" }}>
+          {stage === "info" && (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+                <span className="tp-label" style={{ marginBottom: 0 }}>Ticket price</span>
+                <span className="tp-mono" style={{ fontSize: 24, color: "var(--coral)", fontWeight: 600 }}>{formatPHP(event.price)}</span>
+              </div>
+              <button className="tp-btn tp-btn-primary" style={{ width: "100%", padding: "14px" }} onClick={() => setStage("pay")}><Ticket size={16} /> Get my ticket</button>
+            </>
+          )}
+
+          {stage === "pay" && (
+            <form onSubmit={startCheckout} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div>
+                <label className="tp-label" htmlFor="b-name">Full name</label>
+                <input id="b-name" required className="tp-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              </div>
+              <div>
+                <label className="tp-label" htmlFor="b-phone">Phone number</label>
+                <input id="b-phone" required className="tp-input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="09xx xxx xxxx" />
+              </div>
+              <div>
+                <label className="tp-label" htmlFor="b-email">Email</label>
+                <input id="b-email" required type="email" className="tp-input" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+              </div>
+              <div>
+                <label className="tp-label">Pay with</label>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {PAYMENT_METHODS.filter((m) => (event.methods || []).includes(m.id)).map((m) => {
+                    const Icon2 = m.icon;
+                    const active = method === m.id;
+                    return (
+                      <button type="button" key={m.id} onClick={() => setMethod(m.id)} className="tp-btn"
+                        style={{ padding: "9px 14px", fontSize: 13, background: active ? "var(--ink)" : "#fff", color: active ? "var(--cream)" : "var(--charcoal)", border: `1px solid ${active ? "var(--ink)" : "var(--line)"}` }}>
+                        <Icon2 size={14} /> {m.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {error && <p style={{ fontSize: 13, color: "var(--coral)", margin: 0 }}>{error}</p>}
+              <button type="submit" className="tp-btn tp-btn-primary" style={{ width: "100%", padding: "14px", marginTop: 6 }}>Pay {formatPHP(event.price)}</button>
+              <p style={{ fontSize: 11.5, color: "rgba(42,42,46,0.5)", textAlign: "center", margin: 0 }}>Simulated payment for this prototype — no real charge occurs.</p>
+            </form>
+          )}
+
+          {stage === "processing" && (
+            <div style={{ textAlign: "center", padding: "30px 0" }}>
+              <div className="tp-mono" style={{ color: "var(--teal)", fontSize: 14 }}>Processing payment…</div>
+            </div>
+          )}
+
+          {stage === "done" && (
+            <div style={{ textAlign: "center", padding: "10px 0" }}>
+              <div style={{ width: 48, height: 48, borderRadius: "50%", background: "var(--teal)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+                <Check size={24} color="#fff" />
+              </div>
+              <h3 className="tp-display" style={{ fontSize: 20, margin: "0 0 6px" }}>You're in, {form.name.split(" ")[0]}.</h3>
+              <p style={{ fontSize: 13.5, color: "rgba(42,42,46,0.65)", margin: "0 0 16px" }}>Confirmation sent to {form.email}</p>
+              <div className="tp-mono" style={{ display: "inline-block", padding: "8px 18px", background: "#fff", border: "1px dashed var(--line)", borderRadius: 10, fontSize: 16, letterSpacing: "0.1em" }}>{code}</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Buyers view ---------------- */
+
+function BuyersView({ event, buyers, onBack }) {
+  function exportCSV() {
+    // The backend generates this directly from the database, so it's always current
+    // even if this browser tab's local buyer list is stale.
+    window.open(api.buyersCsvUrl(event.id), "_blank");
+  }
+
+  return (
+    <div style={{ maxWidth: 800, margin: "0 auto", padding: "40px 24px 80px" }}>
+      <button className="tp-btn tp-btn-ghost" style={{ marginBottom: 20, padding: "8px 14px" }} onClick={onBack}><ArrowLeft size={14} /> Back</button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
+        <div>
+          <h1 className="tp-display" style={{ color: "var(--cream)", fontSize: 24, margin: 0 }}>{event.title} — buyers</h1>
+          <p style={{ color: "rgba(255,246,233,0.55)", fontSize: 13, margin: "4px 0 0" }}>{buyers.length} captured</p>
+        </div>
+        <button className="tp-btn tp-btn-primary" onClick={exportCSV} disabled={buyers.length === 0}><Download size={14} /> Export CSV</button>
+      </div>
+
+      <div style={{ background: "#fff", borderRadius: 14, overflow: "hidden" }}>
+        {buyers.length === 0 ? (
+          <div style={{ padding: 36, textAlign: "center", color: "rgba(42,42,46,0.5)", fontSize: 14 }}>No buyers yet. Share the link and they'll show up here in real time.</div>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
+            <thead>
+              <tr style={{ background: "rgba(20,22,31,0.04)", textAlign: "left" }}>
+                {["Name", "Phone", "Email", "Method", "Code"].map((h) => (
+                  <th key={h} style={{ padding: "10px 14px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: "rgba(42,42,46,0.55)" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {buyers.map((b) => (
+                <tr key={b.id} style={{ borderTop: "1px solid rgba(20,22,31,0.08)" }}>
+                  <td style={{ padding: "10px 14px" }}>{b.name}</td>
+                  <td style={{ padding: "10px 14px" }}>{b.phone}</td>
+                  <td style={{ padding: "10px 14px" }}>{b.email}</td>
+                  <td style={{ padding: "10px 14px", textTransform: "capitalize" }}>{b.method}</td>
+                  <td style={{ padding: "10px 14px" }} className="tp-mono">{b.code}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
