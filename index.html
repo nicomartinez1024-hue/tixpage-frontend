@@ -122,12 +122,28 @@ const ExternalLink = (p) => <Icon {...p}><path d="M14 3h7v7"/><line x1="21" y1="
    Leave it as-is while testing locally against `uvicorn app.main:app --reload`. */
 const API_BASE = "https://tixpage-backend.onrender.com";
 
+/* ---- Auth token storage ----
+   Kept in localStorage so a refresh doesn't log the organizer out.
+   (This is a real deployed page, not a Claude artifact, so localStorage is fine here.) */
+const authStore = {
+  get: () => localStorage.getItem("tixpage_token"),
+  set: (token) => localStorage.setItem("tixpage_token", token),
+  clear: () => localStorage.removeItem("tixpage_token"),
+};
+
 /* ---- API-backed persistence (replaces localStorage) ---- */
 async function apiFetch(path, options = {}) {
+  const token = authStore.get();
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     ...options,
   });
+  if (res.status === 401) {
+    authStore.clear();
+  }
   if (!res.ok) {
     let detail = res.statusText;
     try { detail = (await res.json()).detail || detail; } catch {}
@@ -138,6 +154,9 @@ async function apiFetch(path, options = {}) {
 }
 
 const api = {
+  register: (payload) => apiFetch("/auth/register", { method: "POST", body: JSON.stringify(payload) }),
+  login: (payload) => apiFetch("/auth/login", { method: "POST", body: JSON.stringify(payload) }),
+  me: () => apiFetch("/auth/me"),
   listEvents: () => apiFetch("/events"),
   createEvent: (payload) => apiFetch("/events", { method: "POST", body: JSON.stringify(payload) }),
   updateEvent: (id, payload) => apiFetch(`/events/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
@@ -145,7 +164,7 @@ const api = {
   getEventBySlug: (slug) => apiFetch(`/events/by-slug/${slug}`),
   listBuyers: (id) => apiFetch(`/events/${id}/buyers`),
   checkout: (id, payload) => apiFetch(`/events/${id}/checkout`, { method: "POST", body: JSON.stringify(payload) }),
-  buyersCsvUrl: (id) => `${API_BASE}/events/${id}/buyers/export.csv`,
+  buyersCsvUrl: (id) => `${API_BASE}/events/${id}/buyers/export.csv?token=${encodeURIComponent(authStore.get() || "")}`,
 };
 
 const PAYMENT_METHODS = [
@@ -190,6 +209,75 @@ function getSharedSlugFromHash() {
   return m ? decodeURIComponent(m[1]) : null;
 }
 
+function LoginPage({ onAuthed }) {
+  const [mode, setMode] = useState("login"); // "login" | "register"
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [businessName, setBusinessName] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      const result = mode === "login"
+        ? await api.login({ email, password })
+        : await api.register({ email, password, business_name: businessName || null });
+      authStore.set(result.access_token);
+      onAuthed(result.organizer);
+    } catch (err) {
+      setError(err.message || "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="tp-root" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <form onSubmit={submit} style={{ width: "100%", maxWidth: 380, background: "var(--ink)", borderRadius: 20, padding: 32, border: "1px solid rgba(255,255,255,0.08)" }}>
+        <h1 style={{ color: "var(--cream)", fontFamily: "Inter, sans-serif", fontSize: 22, fontWeight: 700, marginBottom: 4 }}>
+          {mode === "login" ? "Log in" : "Create your organizer account"}
+        </h1>
+        <p style={{ color: "rgba(255,246,233,0.55)", fontSize: 13, marginBottom: 24 }}>
+          {mode === "login" ? "Manage your events and see who's bought tickets." : "Every event you create stays private to your account."}
+        </p>
+
+        {mode === "register" && (
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ color: "rgba(255,246,233,0.7)", fontSize: 12.5, display: "block", marginBottom: 6 }}>Business name (optional)</label>
+            <input value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="tp-input" placeholder="e.g. Sunset Events Co." />
+          </div>
+        )}
+
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ color: "rgba(255,246,233,0.7)", fontSize: 12.5, display: "block", marginBottom: 6 }}>Email</label>
+          <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="tp-input" placeholder="you@example.com" />
+        </div>
+
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ color: "rgba(255,246,233,0.7)", fontSize: 12.5, display: "block", marginBottom: 6 }}>Password</label>
+          <input type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} className="tp-input" placeholder="At least 8 characters" />
+        </div>
+
+        {error && <p style={{ fontSize: 13, color: "var(--coral)", marginBottom: 14 }}>{error}</p>}
+
+        <button type="submit" disabled={busy} className="tp-btn tp-btn-primary" style={{ width: "100%", padding: "13px", marginBottom: 14 }}>
+          {busy ? "Please wait…" : mode === "login" ? "Log in" : "Create account"}
+        </button>
+
+        <p style={{ textAlign: "center", fontSize: 13, color: "rgba(255,246,233,0.55)" }}>
+          {mode === "login" ? "New here? " : "Already have an account? "}
+          <a href="#" onClick={(e) => { e.preventDefault(); setMode(mode === "login" ? "register" : "login"); setError(""); }} style={{ color: "var(--marigold)", fontWeight: 600 }}>
+            {mode === "login" ? "Create one" : "Log in instead"}
+          </a>
+        </p>
+      </form>
+    </div>
+  );
+}
+
 function App() {
   const sharedSlug = getSharedSlugFromHash();
 
@@ -201,6 +289,23 @@ function App() {
   const [activeEventId, setActiveEventId] = useState(null);
   const [editingEvent, setEditingEvent] = useState(null);
   const [toast, setToast] = useState("");
+  const [organizer, setOrganizer] = useState(null);
+  const [checkingAuth, setCheckingAuth] = useState(!sharedSlug);
+
+  // On load, if a token is already saved, verify it's still valid before showing the dashboard.
+  useEffect(() => {
+    if (sharedSlug) return;
+    const token = authStore.get();
+    if (!token) { setCheckingAuth(false); return; }
+    api.me().then(setOrganizer).catch(() => authStore.clear()).finally(() => setCheckingAuth(false));
+  }, []);
+
+  function logout() {
+    authStore.clear();
+    setOrganizer(null);
+    setEvents([]);
+    setBuyersByEvent({});
+  }
 
   // Shared-link mode: fetch just that one event by slug, skip the dashboard entirely.
   const [sharedEvent, setSharedEvent] = useState(null);
@@ -231,9 +336,9 @@ function App() {
   }
 
   useEffect(() => {
-    if (sharedSlug) return; // no need to load the admin dashboard in shared mode
+    if (sharedSlug || !organizer) return;
     refreshAll();
-  }, []);
+  }, [organizer]);
 
   useEffect(() => {
     if (!toast) return;
@@ -298,6 +403,18 @@ function App() {
     return <PublicPage event={sharedEvent} onBuy={(buyer) => addBuyer(sharedEvent.id, buyer)} />;
   }
 
+  if (checkingAuth) {
+    return (
+      <div className="tp-root" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 400 }}>
+        <span style={{ color: "var(--cream)", fontFamily: "Inter, sans-serif" }}>Loading…</span>
+      </div>
+    );
+  }
+
+  if (!organizer) {
+    return <LoginPage onAuthed={setOrganizer} />;
+  }
+
   if (loading) {
     return (
       <div className="tp-root" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 400 }}>
@@ -343,6 +460,8 @@ function App() {
           onBuyers={(id) => { setActiveEventId(id); setView("buyers"); }}
           onToggleLive={toggleLive}
           onCopyLink={copyLink}
+          organizer={organizer}
+          onLogout={logout}
         />
       )}
 
@@ -363,7 +482,7 @@ function App() {
 
 /* ---------------- Dashboard ---------------- */
 
-function Dashboard({ events, buyersByEvent, onCreate, onEdit, onView, onBuyers, onToggleLive, onCopyLink }) {
+function Dashboard({ events, buyersByEvent, onCreate, onEdit, onView, onBuyers, onToggleLive, onCopyLink, organizer, onLogout }) {
   const totalBuyers = Object.values(buyersByEvent).reduce((s, l) => s + l.length, 0);
   const totalRevenue = events.reduce((sum, e) => {
     const paid = (buyersByEvent[e.id] || []).length;
@@ -372,6 +491,10 @@ function Dashboard({ events, buyersByEvent, onCreate, onEdit, onView, onBuyers, 
 
   return (
     <div style={{ maxWidth: 1080, margin: "0 auto", padding: "40px 24px 80px" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+        <span style={{ color: "rgba(255,246,233,0.5)", fontSize: 12.5, marginRight: 12 }}>{organizer?.business_name || organizer?.email}</span>
+        <a href="#" onClick={(e) => { e.preventDefault(); onLogout(); }} style={{ color: "var(--marigold)", fontSize: 12.5, fontWeight: 600 }}>Log out</a>
+      </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 16, marginBottom: 32 }}>
         <div>
           <div style={{ color: "var(--marigold)", fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>
