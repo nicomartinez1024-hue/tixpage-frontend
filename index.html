@@ -120,7 +120,7 @@ const ExternalLink = (p) => <Icon {...p}><path d="M14 3h7v7"/><line x1="21" y1="
    Set this to your deployed Render URL (no trailing slash).
    Example: "https://tixpage-backend.onrender.com"
    Leave it as-is while testing locally against `uvicorn app.main:app --reload`. */
-const API_BASE = "http://192.168.1.45:8000";
+const API_BASE = "http//192.168.1.45:8000";
 
 /* ---- Auth token storage ----
    Kept in localStorage so a refresh doesn't log the organizer out.
@@ -164,6 +164,7 @@ const api = {
   getEventBySlug: (slug) => apiFetch(`/events/by-slug/${slug}`),
   listBuyers: (id) => apiFetch(`/events/${id}/buyers`),
   checkout: (id, payload) => apiFetch(`/events/${id}/checkout`, { method: "POST", body: JSON.stringify(payload) }),
+  checkGcashStatus: (eventId, buyerId) => apiFetch(`/events/${eventId}/buyers/${buyerId}/gcash-status`),
   buyersCsvUrl: (id) => `${API_BASE}/events/${id}/buyers/export.csv?token=${encodeURIComponent(authStore.get() || "")}`,
 };
 
@@ -400,7 +401,7 @@ function App() {
         </div>
       );
     }
-    return <PublicPage event={sharedEvent} onBuy={(buyer) => addBuyer(sharedEvent.id, buyer)} />;
+    return <PublicPage event={sharedEvent} onBuy={(buyer) => addBuyer(sharedEvent.id, buyer)} onCheckGcashStatus={(buyerId) => api.checkGcashStatus(sharedEvent.id, buyerId)} />;
   }
 
   if (checkingAuth) {
@@ -470,7 +471,7 @@ function App() {
       )}
 
       {view === "public" && activeEvent && (
-        <PublicPage event={activeEvent} onBack={() => setView("dashboard")} onBuy={(buyer) => addBuyer(activeEvent.id, buyer)} adminPreview />
+        <PublicPage event={activeEvent} onBack={() => setView("dashboard")} onBuy={(buyer) => addBuyer(activeEvent.id, buyer)} onCheckGcashStatus={(buyerId) => api.checkGcashStatus(activeEvent.id, buyerId)} adminPreview />
       )}
 
       {view === "buyers" && activeEvent && (
@@ -671,12 +672,55 @@ function EventForm({ initial, onCancel, onSave }) {
 
 /* ---------------- Public event page (ticket stub) ---------------- */
 
-function PublicPage({ event, onBack, onBuy, adminPreview }) {
-  const [stage, setStage] = useState("info");
+function getBuyerIdFromHash() {
+  // PayMongo redirects back to "...#/e/slug?buyer=abc123" after GCash authorization.
+  const m = window.location.hash.match(/[?&]buyer=([^&]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+function PublicPage({ event, onBack, onBuy, onCheckGcashStatus, adminPreview }) {
+  const returningBuyerId = getBuyerIdFromHash();
+  const [stage, setStage] = useState(returningBuyerId ? "confirming" : "info");
   const [method, setMethod] = useState(event.methods?.[0] || "gcash");
   const [form, setForm] = useState({ name: "", phone: "", email: "" });
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
+
+  // Coming back from GCash authorization - poll until PayMongo confirms it.
+  useEffect(() => {
+    if (!returningBuyerId) return;
+    let cancelled = false;
+    let attempts = 0;
+
+    async function poll() {
+      if (cancelled) return;
+      attempts += 1;
+      try {
+        const result = await onCheckGcashStatus(returningBuyerId);
+        if (result.status === "paid") {
+          setCode(result.code);
+          setStage("done");
+          return;
+        }
+        if (result.status === "failed") {
+          setError("The GCash payment wasn't completed. You can try again below.");
+          setStage("pay");
+          return;
+        }
+        if (attempts > 40) { // ~2 minutes at 3s intervals
+          setError("Still waiting on GCash confirmation. If you already paid, refresh this page in a moment.");
+          setStage("pay");
+          return;
+        }
+        setTimeout(poll, 3000);
+      } catch (err) {
+        setError(err.message || "Could not confirm payment status.");
+        setStage("pay");
+      }
+    }
+    poll();
+    return () => { cancelled = true; };
+  }, [returningBuyerId]);
 
   async function startCheckout(e) {
     e.preventDefault();
@@ -684,12 +728,30 @@ function PublicPage({ event, onBack, onBuy, adminPreview }) {
     setStage("processing");
     try {
       const result = await onBuy({ ...form, method });
+      if (result.status === "pending" && result.checkout_url) {
+        // Real GCash flow - send the buyer to PayMongo to authorize, they'll
+        // land back on this same page (with ?buyer=...) when done.
+        window.location.href = result.checkout_url;
+        return;
+      }
+      // Simulated methods (bank/card) still resolve immediately.
       setCode(result.code);
       setStage("done");
     } catch (err) {
       setError(err.message || "Payment could not be processed. Please try again.");
       setStage("pay");
     }
+  }
+
+  if (stage === "confirming") {
+    return (
+      <div style={{ minHeight: "100vh", background: "var(--cream)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <div style={{ textAlign: "center" }}>
+          <p style={{ fontFamily: "Inter, sans-serif", fontWeight: 600, marginBottom: 6 }}>Confirming your GCash payment…</p>
+          <p style={{ fontFamily: "Inter, sans-serif", fontSize: 13, color: "rgba(42,42,46,0.6)" }}>This usually takes just a few seconds.</p>
+        </div>
+      </div>
+    );
   }
 
   return (
